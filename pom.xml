@@ -12,10 +12,10 @@
     </parent>
 
     <groupId>com.example</groupId>
-    <artifactId>mini-spring-cloud</artifactId>
+    <artifactId>mini-spring-cloud-project</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
-    <name>mini-spring-cloud</name>
+    <name>mini-spring-cloud-project</name>
     <description>Mini Spring Cloud 微服务骨架：Gateway + Nacos + OpenFeign + MySQL</description>
 
     <modules>

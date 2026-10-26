@@ -1,4 +1,4 @@
-name: mini-spring
+name: mini-spring-cloud
 
 # 本地测试环境的「基础设施层」：MySQL + Nacos + Jenkins + Portainer（容器可视化）
 # 应用（gateway / business services）按混合模式跑在宿主 IDE 里，见 docker/infra/README.md
