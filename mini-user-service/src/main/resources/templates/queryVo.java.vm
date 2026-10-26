@@ -1,0 +1,48 @@
+## 列表查询条件模板：默认包含实体全部字段（含主键、逻辑删除、密码、审计字段），
+## 方便在 mapper XML 里按需写条件；XML 的 Condition_Where 默认只对业务字段生成 <if>。
+package ${package.Parent}.domain.query;
+
+import lombok.Data;
+
+import java.io.Serializable;
+#set($hasLocalDateTime = false)
+#set($hasLocalDate = false)
+#set($hasLocalTime = false)
+#set($hasBigDecimal = false)
+#foreach($field in ${table.fields})
+#if(${field.propertyType} == "LocalDateTime")#set($hasLocalDateTime = true)#end
+#if(${field.propertyType} == "LocalDate")#set($hasLocalDate = true)#end
+#if(${field.propertyType} == "LocalTime")#set($hasLocalTime = true)#end
+#if(${field.propertyType} == "BigDecimal")#set($hasBigDecimal = true)#end
+#end
+#if($hasLocalDateTime)
+import java.time.LocalDateTime;
+#end
+#if($hasLocalDate)
+import java.time.LocalDate;
+#end
+#if($hasLocalTime)
+import java.time.LocalTime;
+#end
+#if($hasBigDecimal)
+import java.math.BigDecimal;
+#end
+
+/**
+ * <p>
+ * $!{table.comment} 列表查询条件（字段与实体一一对应）
+ * </p>
+ *
+ * @author ${author}
+ * @since ${date}
+ */
+@Data
+public class ${entity}QueryVO implements Serializable {
+
+    private static final long serialVersionUID = 1L;
+#foreach($field in ${table.fields})
+
+    /** $!{field.comment} */
+    private ${field.propertyType} ${field.propertyName};
+#end
+}

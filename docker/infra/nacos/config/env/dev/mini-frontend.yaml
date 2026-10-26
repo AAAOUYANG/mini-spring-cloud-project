@@ -1,0 +1,29 @@
+# ============================================================================
+# 前端（mini-vue3-project）的配置 —— 由前端容器的 nginx **启动时**读取
+#
+# 为什么前端的后端地址要放在配置中心：
+#   前端是静态 SPA，vite 的 VITE_API_BASE_URL 是**构建期**常量、会被烤进 bundle，
+#   沿用它就等于「换后端地址必须重新构建前端」。所以前端只发相对路径 /api
+#   （与环境无关），真实的后端地址交给托管它的 nginx 在启动时从这里取，
+#   再据此生成 /api 的反代规则。
+#   效果：改后端地址 → 重启前端容器即可，**不需要重新构建前端**。
+#
+# 谁读它：mini-vue3-project 的 docker/nginx/docker-entrypoint.d/10-nacos-config.sh
+#   只按「单个标量」提取下面这几个 key，不做完整 YAML 解析（nginx 容器里不装解析器）。
+# 怎么发布：docker/infra/nacos/publish-config.sh 会把 config/env/<环境>/*.yaml 发到
+#   同名命名空间（本文件 → dev 命名空间），前端容器用 NACOS_NAMESPACE=dev 去读。
+# ============================================================================
+frontend:
+  # 只用于把「这个容器读的是哪个环境的配置」暴露出来：nginx 把它回成响应头
+  # X-Frontend-Env，`curl -I http://127.0.0.1:5300/` 就能一眼看出有没有接错环境。
+  env-label: dev
+
+  # nginx 把 /api/** **原样**转发到这里（保留 /api 前缀：网关的对外路由本来就是
+  # /api/user/**，去掉前缀由网关自己的 StripPrefix 做）。
+  # 容器内直接写服务名 mini-gateway —— 前端 compose 与 docker/app 共用外部网络 mini-net。
+  # 如果后端跑成「混合模式」（应用在宿主 IDE 里），这里要改成
+  #   http://host.docker.internal:9000
+  backend-origin: http://mini-gateway:9000
+
+  # 反代超时（秒）
+  proxy-timeout: 30

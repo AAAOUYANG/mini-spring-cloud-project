@@ -1,0 +1,108 @@
+## Mapper XML 模板：查询 SQL 全部落在这里（不是 LambdaQueryWrapper），方便后续改成连表查询。
+## 分页只写普通查询即可，total / records 由 MyBatis-Plus 的 PaginationInnerInterceptor 填充。
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="${package.Mapper}.${table.mapperName}">
+#set($hasLogicDelete = false)
+#set($logicDeleteColumn = "deleted")
+#set($logicDeleteProperty = "deleted")
+#set($pkColumn = "id")
+#foreach($field in ${table.fields})
+#if(${field.keyFlag})
+#set($pkColumn = ${field.name})
+#end
+#if(${field.propertyName} == "deleted")
+#set($hasLogicDelete = true)
+#set($logicDeleteColumn = ${field.name})
+#set($logicDeleteProperty = ${field.propertyName})
+#end
+#end
+
+    <!-- 查询结果映射到 DTO：连表查询要补字段时，在这里加 <result> 并在下面的 SELECT 里带上列 -->
+    <resultMap id="BaseResultMap" type="${package.Parent}.domain.dto.${entity}DTO">
+#foreach($field in ${table.fields})
+#if(${field.keyFlag} && ${field.propertyName} != "deleted")
+        <id column="${field.name}" property="${field.propertyName}" />
+#end
+#end
+#foreach($field in ${table.fields})
+#if(!${field.keyFlag} && ${field.propertyName} != "deleted")
+        <result column="${field.name}" property="${field.propertyName}" />
+#end
+#end
+    </resultMap>
+
+#if($hasLogicDelete)
+    <!-- 查询列：含逻辑删除列，resultMap 不映射它，不影响 DTO -->
+#else
+    <!-- 查询列：与 resultMap 对应，表里新增字段时这里别漏 -->
+#end
+    <sql id="Base_Column_List">
+        ${table.fieldNames}
+    </sql>
+
+    <!--
+      查询条件：QueryVO 里的每个字段都会生成条件（String 走 like，其他类型走 eq）。
+#if($hasLogicDelete)
+      逻辑删除列不传时默认过滤未删除（${logicDeleteColumn} = 0），显式传了则按传入值查（可查已删除数据）。
+#end
+      连表查询在这里加 JOIN / 补充条件，Java 侧（XxxService.list / page）不用动。
+    -->
+    <sql id="Condition_Where">
+        <where>
+#if($hasLogicDelete)
+            <if test="query.${logicDeleteProperty} == null">
+                AND ${logicDeleteColumn} = 0
+            </if>
+            <if test="query.${logicDeleteProperty} != null">
+                AND ${logicDeleteColumn} = #{query.${logicDeleteProperty}}
+            </if>
+#end
+#foreach($field in ${table.fields})
+#if(${field.propertyName} != "deleted")
+#if(${field.propertyType} == "String")
+            <if test="query.${field.propertyName} != null and query.${field.propertyName} != ''">
+                AND ${field.name} LIKE CONCAT('%', #{query.${field.propertyName}}, '%')
+            </if>
+#else
+            <if test="query.${field.propertyName} != null">
+                AND ${field.name} = #{query.${field.propertyName}}
+            </if>
+#end
+#end
+#end
+        </where>
+    </sql>
+
+    <!-- 条件查询列表 -->
+    <select id="selectListByCondition" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM ${table.name}
+        <include refid="Condition_Where"/>
+    </select>
+
+    <!-- 条件分页查询：MyBatis-Plus 分页插件会自动包 count 查询 -->
+    <select id="selectPageByCondition" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM ${table.name}
+        <include refid="Condition_Where"/>
+    </select>
+#if($hasLogicDelete)
+
+    <!--
+      软删除：显式 UPDATE 把删除标记置 1，行保留在库里，不发 DELETE 语句。
+      注意不要用 MyBatis-Plus 的 updateById 来置这个字段：逻辑删除列会被从 SET 子句里剔除，
+      会生成非法的 "UPDATE xxx WHERE ..."；也不要改回 deleteById，那会依赖 @TableLogic 的隐式改写。
+      "AND deleted = 0" 保证重复删除不会命中（返回受影响行数 0）。
+      updated_at 由建表 DDL 的 ON UPDATE CURRENT_TIMESTAMP 自动更新，这里不重复赋值。
+    -->
+    <update id="softDeleteById">
+        UPDATE ${table.name}
+        SET ${logicDeleteColumn} = 1
+        WHERE ${pkColumn} = #{id}
+          AND ${logicDeleteColumn} = 0
+    </update>
+#end
+</mapper>

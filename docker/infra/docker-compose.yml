@@ -1,0 +1,202 @@
+name: mini-spring
+
+# 本地测试环境的「基础设施层」：MySQL + Nacos + Jenkins + Portainer（容器可视化）
+# 应用（gateway / business services）按混合模式跑在宿主 IDE 里，见 docker/infra/README.md
+#
+# 常用命令（在 docker/infra 目录下执行）：
+#   docker compose up -d                 启动全部（含一次性任务 nacos-config-init 发布配置）
+#   docker compose up -d mysql nacos     只启动 MySQL + Nacos
+#   docker compose ps                    查看健康状态（nacos-config-init 显示 Exited 0 属正常）
+#   docker compose logs -f nacos         跟踪日志
+#   docker compose run --rm nacos-config-init   改完 nacos/config/*.yaml 后重新发布配置
+#   docker compose down                  停止（保留数据）
+#   docker compose down -v               停止并删除数据（下次启动会重新执行 mysql/init/*.sql）
+
+services:
+
+  # ---------------------------------------------------------------- MySQL
+  mysql:
+    image: mysql:8.0
+    container_name: mini-mysql
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-mini_spring_boot}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      # 宿主 3306 已被本机原生 MySQL 8.4.7 占用，这里固定用 13306，避免冲突
+      - "127.0.0.1:${MYSQL_HOST_PORT:-13306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # *.sql 只在数据卷为空时执行一次；改了脚本必须 docker compose down -v 才会重新执行
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -h127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" -e 'SELECT 1' >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    networks:
+      - mini-net
+    mem_limit: 1g
+
+  # ---------------------------------------------------------------- Nacos
+  nacos:
+    image: nacos/nacos-server:v2.4.3
+    container_name: mini-nacos
+    restart: unless-stopped
+    environment:
+      MODE: standalone
+      # 配置持久化到 MySQL（默认是内嵌 Derby，容器重建后配置易丢）
+      SPRING_DATASOURCE_PLATFORM: mysql
+      MYSQL_SERVICE_HOST: mysql
+      MYSQL_SERVICE_PORT: "3306"
+      MYSQL_SERVICE_DB_NAME: ${NACOS_DB_NAME:-nacos_config}
+      MYSQL_SERVICE_USER: root
+      MYSQL_SERVICE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_SERVICE_DB_PARAM: characterEncoding=utf8&connectTimeout=1000&socketTimeout=3000&autoReconnect=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+      # 本地测试环境关闭鉴权；切勿照搬到生产
+      NACOS_AUTH_ENABLE: "false"
+      JVM_XMS: 512m
+      JVM_XMX: 512m
+      JVM_XMN: 256m
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      # 8848 是控制台/HTTP，9848/9849 是 Nacos 2.x 的 gRPC 端口（= 8848+1000/+1001）
+      # 只映射 8848 会导致「服务注册不上、一直重连」，因为跑在宿主 IDE 的应用要走 9848
+      - "127.0.0.1:8848:8848"
+      - "127.0.0.1:9848:9848"
+      - "127.0.0.1:9849:9849"
+    volumes:
+      - nacos-logs:/home/nacos/logs
+    depends_on:
+      mysql:
+        # 必须等 MySQL 真正能接受查询，否则 Nacos 起不来
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8848/nacos/v1/console/health/readiness >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    networks:
+      - mini-net
+    mem_limit: 1500m
+
+  # ---------------------------------------------------------------- 配置发布（一次性任务）
+  # 把 nacos/config/*.yaml 发布到配置中心，让「配置随仓库管理」自动发生，
+  # 不必手动记着去控制台点。它跑完就退出（docker compose ps 里显示 Exited (0) 是正常的）。
+  #
+  # 改了配置后重新发布：docker compose run --rm nacos-config-init
+  # 也可以不用容器，直接跑脚本：NACOS_ADDR=127.0.0.1:8848 ./nacos/publish-config.sh
+  nacos-config-init:
+    image: curlimages/curl:latest
+    container_name: mini-nacos-config-init
+    restart: "no"
+    depends_on:
+      nacos:
+        condition: service_healthy
+    environment:
+      NACOS_ADDR: nacos:8848
+    volumes:
+      # 用 sh 显式执行脚本，不依赖宿主文件的可执行位
+      - ./nacos:/scripts:ro
+    entrypoint: ["sh", "/scripts/publish-config.sh"]
+    networks:
+      - mini-net
+
+  # ---------------------------------------------------------------- Jenkins
+  jenkins:
+    build:
+      context: ./jenkins
+      dockerfile: Dockerfile
+    image: mini-jenkins:lts-jdk17
+    container_name: mini-jenkins
+    restart: unless-stopped
+    # 挂载 /var/run/docker.sock 需要能写该 socket；宿主 socket 属主是 uid 501，
+    # 容器内 jenkins 用户是 uid 1000，属于 other 且无写权限，故用 root。
+    # 仅限本地测试环境，生产禁止这样挂 socket。
+    user: root
+    environment:
+      JAVA_OPTS: >-
+        -Djenkins.install.runSetupWizard=false
+        -Duser.timezone=${TZ:-Asia/Shanghai}
+      CASC_JENKINS_CONFIG: /var/jenkins_home/casc_configs
+      TZ: ${TZ:-Asia/Shanghai}
+      # 同一个值既用于上面的挂载路径，也由 JCasC 注入成全局环境变量 REPO_DIR，
+      # 供流水线把 workspace 指向真实仓库目录。两处必须是同一个路径。
+      WORKSPACE_DIR: "${WORKSPACE_DIR:?请在 docker/infra/.env 中把 WORKSPACE_DIR 设为仓库根目录的绝对路径}"
+      # 前端仓库路径，同样由 JCasC 注入成全局变量 FRONTEND_DIR，
+      # 供 mini-vue3-frontend-* 任务读取前端仓库里的 Jenkinsfile。
+      FRONTEND_DIR: "${FRONTEND_DIR:?请在 docker/infra/.env 中把 FRONTEND_DIR 设为前端仓库根目录的绝对路径}"
+    ports:
+      - "127.0.0.1:${JENKINS_HOST_PORT:-8080}:8080"
+      - "127.0.0.1:${JENKINS_AGENT_PORT:-50000}:50000"
+    volumes:
+      - jenkins-home:/var/jenkins_home
+      - ./jenkins/casc:/var/jenkins_home/casc_configs:ro
+      # 代码来源：直接挂宿主仓库目录，不额外引入 Git 服务
+      # 关键：容器内路径必须与宿主路径完全一致，否则 Jenkins 让宿主 docker 启
+      # 构建容器时挂载 workspace 会找不到目录（docker-outside-of-docker 的经典坑）
+      - "${WORKSPACE_DIR:?请在 docker/infra/.env 中把 WORKSPACE_DIR 设为仓库根目录的绝对路径}:${WORKSPACE_DIR}"
+      # 前端仓库：mini-vue3-frontend-* 任务要读它的 Jenkinsfile，并以它为构建上下文打前端镜像。
+      # 同样要求「容器内路径 = 宿主路径」，否则宿主 docker 找不到构建上下文。
+      - "${FRONTEND_DIR:?请在 docker/infra/.env 中把 FRONTEND_DIR 设为前端仓库根目录的绝对路径}:${FRONTEND_DIR}"
+      - /var/run/docker.sock:/var/run/docker.sock
+      # 管道里用 docker agent 构建时的 Maven 本地仓库缓存
+      - m2-repo:/root/.m2
+    networks:
+      - mini-net
+    mem_limit: 2g
+
+  # ---------------------------------------------------------------- Portainer（容器可视化）
+  # 用网页查看/管理本机所有容器（比 docker ps 直观：日志、环境变量、映射、启停都点得出来）。
+  # 首次打开需要创建管理员账号（用户名至少 12 位），数据存在 portainer-data 卷里，删容器不丢。
+  portainer:
+    image: portainer/portainer-ce:2.45.3
+    container_name: mini-portainer
+    restart: unless-stopped
+    command:
+      # 2.4x 默认只开 HTTPS(9443)；本环境统一走 HTTP 且只绑 127.0.0.1，
+      # 省掉自签证书告警。要 HTTPS 就删掉这行并放开下面的 9443 映射。
+      - --http-enabled
+      # 2.4x 首次初始化要一个「安装令牌」（默认打印在容器日志里）。本环境 Nacos/Jenkins 都没开鉴权，
+      # 保持一致：免令牌直接进建管理员页面。想恢复默认就删掉这行，令牌在 docker logs mini-portainer 里。
+      - --no-setup-token
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      # 宿主 9000 已被网关（唯一入口）占用，所以 Portainer 走 9001，容器内仍是 9000
+      - "127.0.0.1:${PORTAINER_HOST_PORT:-9001}:9000"
+      # 需要 HTTPS 时放开（自签证书，浏览器会提示不受信任）：
+      # - "127.0.0.1:${PORTAINER_HTTPS_PORT:-9443}:9443"
+    volumes:
+      # 与 Jenkins 同样的取舍：挂 docker.sock 才能「看见并操作」容器。
+      # 想只看不动就改成 /var/run/docker.sock:/var/run/docker.sock:ro。
+      # 仅限本地测试环境，生产禁止这样挂 socket。
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer-data:/data
+    networks:
+      - mini-net
+    mem_limit: 512m
+    # 不配 healthcheck：该镜像里没有任何 shell/curl（148MB 极简镜像，只有 /portainer），
+    # 容器内没法做探测。要看状态用 docker compose ps，或宿主上 curl -sI http://127.0.0.1:9001。
+
+networks:
+  mini-net:
+    name: mini-net
+
+volumes:
+  mysql-data:
+    name: mini-mysql-data
+  nacos-logs:
+    name: mini-nacos-logs
+  jenkins-home:
+    name: mini-jenkins-home
+  m2-repo:
+    name: mini-m2-repo
+  portainer-data:
+    name: mini-portainer-data

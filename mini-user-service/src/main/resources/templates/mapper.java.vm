@@ -1,0 +1,67 @@
+## Mapper 接口模板：除 MyBatis-Plus 自带的 BaseMapper 方法外，查询统一走 XxxMapper.xml
+## 里的自定义 SQL（便于后续改造成连表查询），service 层直接调用这两个方法。
+package ${package.Mapper};
+
+import ${package.Entity}.${entity};
+import ${package.Parent}.domain.dto.${entity}DTO;
+import ${package.Parent}.domain.query.${entity}QueryVO;
+import ${superMapperClassPackage};
+#if(${mapperAnnotationClass})
+import ${mapperAnnotationClass.name};
+#end
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
+#set($hasLogicDelete = false)
+#foreach($field in ${table.fields})
+#if(${field.keyFlag})
+#set($pkType = ${field.propertyType})
+#end
+#if(${field.propertyName} == "deleted")
+#set($hasLogicDelete = true)
+#end
+#end
+
+/**
+ * <p>
+ * $!{table.comment} Mapper 接口
+ * </p>
+ *
+ * @author ${author}
+ * @since ${date}
+ */
+#if(${mapperAnnotationClass})
+@${mapperAnnotationClass.simpleName}
+#end
+public interface ${table.mapperName} extends ${superMapperClass}<${entity}> {
+
+    /**
+     * 条件查询列表（SQL 见 ${table.mapperName}.xml，连表查询直接改 XML）
+     *
+     * @param queryVO 查询条件
+     * @return DTO 列表
+     */
+    List<${entity}DTO> selectListByCondition(@Param("query") ${entity}QueryVO queryVO);
+
+    /**
+     * 条件分页查询：IPage 由 MyBatis-Plus 的 PaginationInnerInterceptor 填充 total / records，
+     * SQL 同样写在 ${table.mapperName}.xml 里。
+     *
+     * @param page    分页参数
+     * @param queryVO 查询条件
+     * @return DTO 分页结果
+     */
+    IPage<${entity}DTO> selectPageByCondition(IPage<${entity}DTO> page, @Param("query") ${entity}QueryVO queryVO);
+
+#if($hasLogicDelete)
+    /**
+     * 软删除：显式 UPDATE 把删除标记置 1（SQL 见 ${table.mapperName}.xml），
+     * 不走 MyBatis-Plus 的 deleteById / updateById。
+     *
+     * @param id 主键
+     * @return 受影响行数，已删除或不存在时为 0
+     */
+    int softDeleteById(@Param("id") ${pkType} id);
+#end
+}

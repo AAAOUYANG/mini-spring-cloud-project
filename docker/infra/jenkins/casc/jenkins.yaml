@@ -1,0 +1,142 @@
+# Jenkins 配置代码化（JCasC）
+# 由容器环境变量 CASC_JENKINS_CONFIG=/var/jenkins_home/casc_configs 加载本目录下所有 *.yml
+#
+# 为什么用它：手点插件/配置的环境是「一次性」的，删掉容器就没了；
+# 这份文件让环境可以随时重建，也是能进版本库的部分。
+
+jenkins:
+  systemMessage: "mini-spring 本地测试环境 | 基础设施由 docker/infra/docker-compose.yml 管理"
+  numExecutors: 2
+  # NORMAL = 允许任务在 master 上执行；本地环境没必要额外起 agent 节点
+  mode: NORMAL
+  quietPeriod: 0
+  scmCheckoutRetryCount: 2
+  # 全局环境变量：REPO_DIR = 仓库在容器内的绝对路径，供流水线把 workspace 指向它。
+  # 必须嵌在 jenkins: 下面 —— JCasC 没有顶层 globalNodeProperties 根元素，写成顶层会
+  # 直接让 Jenkins 启动失败（BootFailure，且容器进入崩溃重启循环）。
+  # 值来自 compose 注入的 WORKSPACE_DIR，与仓库挂载点用的是同一个变量，
+  # 这样「挂载路径」和「流水线看到的路径」必然一致（docker-outside-of-docker 的前提）。
+  globalNodeProperties:
+    - envVars:
+        env:
+          - key: REPO_DIR
+            value: "${WORKSPACE_DIR}"
+          # 前端仓库根目录。只有前端那两个任务用得到：
+          # 它们据此读前端仓库里的 Jenkinsfile，并把 workspace 指向那个目录。
+          - key: FRONTEND_DIR
+            value: "${FRONTEND_DIR}"
+  # 刻意不配置 securityRealm / authorizationStrategy：
+  # 本地测试环境使用 Jenkins 默认的「无鉴权」模式，配合 compose 里端口只绑定
+  # 127.0.0.1，不对外暴露。若之后要启用鉴权，这两项必须成对配置，
+  # 否则会出现「有鉴权策略但无法登录」的死局。
+
+unclassified:
+  location:
+    # 若在 .env 里改了 JENKINS_HOST_PORT，这里要同步改
+    url: "http://127.0.0.1:8080/"
+  timestamper:
+    allPipelines: true
+
+# ---------------------------------------------------------------------------
+# 关于 Docker server（顶层 clouds 根元素）
+#
+# 实测本环境的 JCasC 对顶层 clouds 报「No configurator found」，会让 Jenkins
+# 启动失败并崩溃重启，所以这里不配 clouds。流水线里的 docker agent 直接用宿主
+# 挂进来的 /var/run/docker.sock（docker:cli 的 DOCKER_HOST 默认指向 dind 的
+# tcp://docker:2375，必须显式覆盖成 unix:// 那个 socket）。
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# 流水线任务（dev / prod 两个任务，内联同一份 Jenkinsfile）
+#
+# 这里没有用 cpsScm（Git SCM）：本环境刻意不引入 Git 服务，代码是直接挂载进来的。
+# 于是改成「JCasC 在 Jenkins 进程内读仓库里的 Jenkinsfile，再内联进 job 定义」，
+# Jenkinsfile 依然是唯一真源，job 本身可随时由这份 yaml 重建。
+# 代价：改了 Jenkinsfile 要重新应用 JCasC（docker compose up -d jenkins）才生效。
+#
+# 为什么按环境拆成两个任务，而不是一个任务加 ENVIRONMENT 参数：
+#   - 参数可以被改写，任务名不能。流水线用 JOB_NAME.endsWith('-prod') 推导环境，
+#     命名不符合约定时一律落到 dev，不会因为改名而误发生产。
+#   - 构建历史、触发方式、后续权限天然分开：prod 只应该人工触发。
+# 两个任务内联的是**同一份**脚本，环境差异不在流水线里，而在任务名 +
+# docker/app/env/<环境>.env + Nacos 命名空间。所以 dev 与 prod 产出的是同一个制品，
+# prod 只是把 dev 验过的产物晋级，而不是「为生产再构建一遍」。
+# ---------------------------------------------------------------------------
+jobs:
+  - script: |
+      def repoDir = System.getenv('WORKSPACE_DIR')
+      if (!repoDir) {
+        throw new IllegalStateException('环境变量 WORKSPACE_DIR 未设置，无法读取仓库里的 Jenkinsfile')
+      }
+      def jenkinsfile = new File(repoDir, 'Jenkinsfile')
+      if (!jenkinsfile.isFile()) {
+        throw new IllegalStateException('找不到 ' + jenkinsfile)
+      }
+      def pipelineScript = jenkinsfile.getText('UTF-8')
+      // ⚠️ 下面刻意全部用字符串拼接，不写 Groovy 的字符串插值：
+      //    JCasC 会先对它自己读到的 ${...} 做变量替换（globalNodeProperties 里的
+      //    WORKSPACE_DIR 就是这么来的），不认识的变量会被替换成空串，
+      //    结果任务名会变成 "mini-spring-cloud-"（实测踩过）。
+      def environments = [
+        [name: 'dev',  desc: '开发环境：允许未提交改动与自动构建，可重建本地环境并冒烟'],
+        [name: 'prod', desc: '生产环境：工作区必须干净、禁止跳过测试，人工审批后才晋级 :prod（本阶段不部署）']
+      ]
+      environments.each { item ->
+        def jobName = 'mini-spring-cloud-' + item.name
+        def jobLabel = 'mini-spring-cloud-' + item.name + '（本地 CI · ' + item.name + '）'
+        def jobDesc = '<b>环境：' + item.name + '</b> —— ' + item.desc +
+          "<br>环境由任务名推导（JOB_NAME.endsWith('-prod')），刻意不做成参数：参数能被改写，任务名不能。" +
+          '<br>定义来自仓库根目录的 Jenkinsfile，由 JCasC 内联生成；改 Jenkinsfile 后需重新应用 JCasC。'
+        pipelineJob(jobName) {
+          displayName(jobLabel)
+          description(jobDesc)
+          definition {
+            cps {
+              script(pipelineScript)
+              sandbox(true)
+            }
+          }
+        }
+      }
+
+  # ---------------------------------------------------------------------------
+  # 前端仓库的任务（mini-vue3-frontend-dev / -prod）
+  #
+  # 与上面后端那组**结构完全一致**，差别只有三处：读的是前端仓库的 Jenkinsfile、
+  # 用 FRONTEND_DIR 定位、任务名前缀是 mini-vue3-frontend-。
+  # 之所以仍是两个任务而不是一个任务加环境参数，理由同上面：参数能被改写，任务名不能。
+  #
+  # 注意 JCasC 的 ${...} 替换坑同样适用：下面这段脚本里一个 ${} 都不能出现
+  # （不认识的变量会被替换成空串，任务名会变成 "mini-vue3-frontend-"）。
+  # ---------------------------------------------------------------------------
+  - script: |
+      def frontendDir = System.getenv('FRONTEND_DIR')
+      if (!frontendDir) {
+        throw new IllegalStateException('环境变量 FRONTEND_DIR 未设置，无法读取前端仓库里的 Jenkinsfile')
+      }
+      def jenkinsfile = new File(frontendDir, 'Jenkinsfile')
+      if (!jenkinsfile.isFile()) {
+        throw new IllegalStateException('找不到 ' + jenkinsfile)
+      }
+      def pipelineScript = jenkinsfile.getText('UTF-8')
+      def environments = [
+        [name: 'dev',  desc: '开发环境：允许未提交改动与自动构建，可重建本地前端容器并冒烟'],
+        [name: 'prod', desc: '生产环境：工作区必须干净且不在主干分支、产物必须环境无关，人工审批后才晋级 :prod（本阶段不部署）']
+      ]
+      environments.each { item ->
+        def jobName = 'mini-vue3-frontend-' + item.name
+        def jobLabel = 'mini-vue3-frontend-' + item.name + '（本地 CI · ' + item.name + '）'
+        def jobDesc = '<b>环境：' + item.name + '</b> —— ' + item.desc +
+          "<br>环境由任务名推导（JOB_NAME.endsWith('-prod')），刻意不做成参数：参数能被改写，任务名不能。" +
+          '<br>定义来自前端仓库（mini-vue3-project）根目录的 Jenkinsfile，由 JCasC 内联生成；改 Jenkinsfile 后需重新应用 JCasC。'
+        pipelineJob(jobName) {
+          displayName(jobLabel)
+          description(jobDesc)
+          definition {
+            cps {
+              script(pipelineScript)
+              sandbox(true)
+            }
+          }
+        }
+      }

@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.demo.repository.UserMapper">
+
+    <!-- 查询结果映射到 DTO：连表查询要补字段时，在这里加 <result> 并在下面的 SELECT 里带上列 -->
+    <resultMap id="BaseResultMap" type="com.example.demo.domain.dto.UserDTO">
+        <id column="id" property="id" />
+        <result column="username" property="username" />
+        <result column="password" property="password" />
+        <result column="nickname" property="nickname" />
+        <result column="status" property="status" />
+        <result column="created_by" property="createdBy" />
+        <result column="created_by_name" property="createdByName" />
+        <result column="created_at" property="createdAt" />
+        <result column="updated_by" property="updatedBy" />
+        <result column="updated_by_name" property="updatedByName" />
+        <result column="updated_at" property="updatedAt" />
+    </resultMap>
+
+    <!-- 查询列：含逻辑删除列，resultMap 不映射它，不影响 DTO -->
+    <sql id="Base_Column_List">
+        id, username, password, nickname, status, deleted, created_by, created_by_name, created_at, updated_by, updated_by_name, updated_at
+    </sql>
+
+    <!--
+      查询条件：QueryVO 里的每个字段都会生成条件（String 走 like，其他类型走 eq）。
+      逻辑删除列不传时默认过滤未删除（deleted = 0），显式传了则按传入值查（可查已删除数据）。
+      连表查询在这里加 JOIN / 补充条件，Java 侧（XxxService.list / page）不用动。
+    -->
+    <sql id="Condition_Where">
+        <where>
+            <if test="query.deleted == null">
+                AND deleted = 0
+            </if>
+            <if test="query.deleted != null">
+                AND deleted = #{query.deleted}
+            </if>
+            <if test="query.id != null">
+                AND id = #{query.id}
+            </if>
+            <if test="query.username != null and query.username != ''">
+                AND username LIKE CONCAT('%', #{query.username}, '%')
+            </if>
+            <if test="query.password != null and query.password != ''">
+                AND password LIKE CONCAT('%', #{query.password}, '%')
+            </if>
+            <if test="query.nickname != null and query.nickname != ''">
+                AND nickname LIKE CONCAT('%', #{query.nickname}, '%')
+            </if>
+            <if test="query.status != null">
+                AND status = #{query.status}
+            </if>
+            <if test="query.createdBy != null">
+                AND created_by = #{query.createdBy}
+            </if>
+            <if test="query.createdByName != null and query.createdByName != ''">
+                AND created_by_name LIKE CONCAT('%', #{query.createdByName}, '%')
+            </if>
+            <if test="query.createdAt != null">
+                AND created_at = #{query.createdAt}
+            </if>
+            <if test="query.updatedBy != null">
+                AND updated_by = #{query.updatedBy}
+            </if>
+            <if test="query.updatedByName != null and query.updatedByName != ''">
+                AND updated_by_name LIKE CONCAT('%', #{query.updatedByName}, '%')
+            </if>
+            <if test="query.updatedAt != null">
+                AND updated_at = #{query.updatedAt}
+            </if>
+        </where>
+    </sql>
+
+    <!-- 条件查询列表 -->
+    <select id="selectListByCondition" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM sys_user
+        <include refid="Condition_Where"/>
+    </select>
+
+    <!-- 条件分页查询：MyBatis-Plus 分页插件会自动包 count 查询 -->
+    <select id="selectPageByCondition" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM sys_user
+        <include refid="Condition_Where"/>
+    </select>
+
+    <!--
+      软删除：显式 UPDATE 把删除标记置 1，行保留在库里，不发 DELETE 语句。
+      注意不要用 MyBatis-Plus 的 updateById 来置这个字段：逻辑删除列会被从 SET 子句里剔除，
+      会生成非法的 "UPDATE xxx WHERE ..."；也不要改回 deleteById，那会依赖 @TableLogic 的隐式改写。
+      "AND deleted = 0" 保证重复删除不会命中（返回受影响行数 0）。
+      updated_at 由建表 DDL 的 ON UPDATE CURRENT_TIMESTAMP 自动更新，这里不重复赋值。
+    -->
+    <update id="softDeleteById">
+        UPDATE sys_user
+        SET deleted = 1
+        WHERE id = #{id}
+          AND deleted = 0
+    </update>
+</mapper>

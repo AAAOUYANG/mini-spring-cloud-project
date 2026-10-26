@@ -1,0 +1,70 @@
+## service 实现模板：controller 只透传，查询 SQL 在 XxxMapper.xml（见 mapper.xml.vm），
+## 分页交给 MyBatis-Plus 的 PaginationInnerInterceptor（见 MybatisPlusConfig），不需要 PageHelper。
+package ${package.ServiceImpl};
+
+import ${package.Entity}.${entity};
+import ${package.Mapper}.${table.mapperName};
+import com.example.common.web.PageResult;
+import ${package.Parent}.domain.dto.${entity}DTO;
+import ${package.Parent}.domain.query.${entity}PageQueryVO;
+import ${package.Parent}.domain.query.${entity}QueryVO;
+import ${package.Service}.${table.serviceName};
+import ${superServiceImplClassPackage};
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+#set($hasLogicDelete = false)
+#foreach($field in ${table.fields})
+#if(${field.keyFlag})
+#set($pkType = ${field.propertyType})
+#set($pkSetter = "set" + ${field.propertyName.substring(0,1).toUpperCase()} + ${field.propertyName.substring(1)})
+#end
+#if(${field.propertyName} == "deleted")
+#set($hasLogicDelete = true)
+#end
+#end
+
+/**
+ * <p>
+ * $!{table.comment} 服务实现类
+ * </p>
+ *
+ * @author ${author}
+ * @since ${date}
+ */
+@Service
+public class ${table.serviceImplName} extends ${superServiceImplClass}<${table.mapperName}, ${entity}> implements ${table.serviceName} {
+
+    /** 按主键查询详情（主键装进 QueryVO 复用 list，SQL 见 ${table.mapperName}.xml） */
+    @Override
+    public ${entity}DTO detail(${pkType} id) {
+        ${entity}QueryVO queryVO = new ${entity}QueryVO();
+        queryVO.${pkSetter}(id);
+        List<${entity}DTO> records = list(queryVO);
+        return records.isEmpty() ? null : records.get(0);
+    }
+
+#if($hasLogicDelete)
+    /** 软删除：显式 UPDATE（SQL 见 ${table.mapperName}.xml），返回是否删除成功 */
+    @Override
+    public boolean remove(${pkType} id) {
+        return baseMapper.softDeleteById(id) > 0;
+    }
+#end
+
+    /** 条件查询列表（SQL 见 ${table.mapperName}.xml） */
+    @Override
+    public List<${entity}DTO> list(${entity}QueryVO queryVO) {
+        return baseMapper.selectListByCondition(queryVO);
+    }
+
+    /** 条件分页查询（SQL 见 ${table.mapperName}.xml，分页由 MyBatis-Plus 插件处理） */
+    @Override
+    public PageResult<${entity}DTO> page(${entity}PageQueryVO queryVO) {
+        Page<${entity}DTO> page = new Page<${entity}DTO>(queryVO.getPageNum(), queryVO.getPageSize());
+        IPage<${entity}DTO> result = baseMapper.selectPageByCondition(page, queryVO);
+        return PageResult.of(result.getRecords(), result.getTotal(), result.getCurrent(), result.getSize());
+    }
+}

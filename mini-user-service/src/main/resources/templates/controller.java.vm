@@ -1,0 +1,119 @@
+## 带 DTO / QueryVO / PageQueryVO / MapStruct 转换器的 RESTful controller 模板。
+## 转换器是 @Mapper(componentModel = "spring") 接口，这里用它的 INSTANCE 静态实例调用；
+## 也可以改成 @Resource 注入 ${entity}Converter，两种方式等价。
+## 类上 @RequestMapping 已经是 /entityPath，方法路径如下：
+##   新增 POST   /user/save      入参 UserDTO         返回 UserDTO
+##   修改 PUT    /user/{id}      入参 UserDTO         返回 UserDTO
+##   删除 DELETE /user/{id}                           返回 Boolean
+##       表里有 deleted 列：软删除（service.remove → XML 的 UPDATE，只置 deleted=1，行保留）
+##       表里没有 deleted 列：物理删除（IService.removeById），因为表本身没有删除标记可置位
+##   详情 GET    /user/{id}                           返回 UserDTO（转调 service.detail）
+##   列表 GET    /user/list      入参 UserQueryVO     返回 List<UserDTO>
+##   分页 GET    /user/page      入参 UserPageQueryVO 返回 PageResult<UserDTO>
+##
+## 说明：统一响应类与 DTO/QueryVO/Converter 的包名都基于 ${package.Parent} 推导，
+## 与 CodeGenerator 中的 packageConfig 保持一致。
+package ${package.Controller};
+
+import com.example.common.web.ApiResponse;
+import com.example.common.web.PageResult;
+import ${package.Parent}.convert.${entity}Converter;
+import ${package.Parent}.domain.dto.${entity}DTO;
+import ${package.Parent}.domain.query.${entity}PageQueryVO;
+import ${package.Parent}.domain.query.${entity}QueryVO;
+import ${package.Entity}.${entity};
+import ${package.Service}.${table.serviceName};
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import javax.annotation.Resource;
+import java.util.List;
+#set($hasLogicDelete = false)
+#foreach($field in ${table.fields})
+#if(${field.keyFlag})
+#set($pkType = ${field.propertyType})
+#set($pkSetter = "set" + ${field.propertyName.substring(0,1).toUpperCase()} + ${field.propertyName.substring(1)})
+#end
+#if(${field.propertyName} == "deleted")
+#set($hasLogicDelete = true)
+#end
+#end
+
+/**
+ * <p>
+ * $!{table.comment} 前端控制器
+ * </p>
+ *
+ * @author ${author}
+ * @since ${date}
+ */
+@RestController
+@RequestMapping("/${table.entityPath}")
+public class ${table.controllerName} {
+
+    @Resource
+    private ${table.serviceName} ${table.entityPath}Service;
+
+    /** 新增 */
+    @PostMapping("/save")
+    public ApiResponse<${entity}DTO> save(@RequestBody ${entity}DTO dto) {
+        ${entity} entity = ${entity}Converter.INSTANCE.toEntity(dto);
+        ${table.entityPath}Service.save(entity);
+        return ApiResponse.ok(${entity}Converter.INSTANCE.toDTO(entity));
+    }
+
+    /** 修改 */
+    @PutMapping("/{id}")
+    public ApiResponse<${entity}DTO> update(@PathVariable ${pkType} id, @RequestBody ${entity}DTO dto) {
+        dto.${pkSetter}(id);
+        ${table.entityPath}Service.updateById(${entity}Converter.INSTANCE.toEntity(dto));
+        return ApiResponse.ok(${entity}Converter.INSTANCE.toDTO(${table.entityPath}Service.getById(id)));
+    }
+
+#if($hasLogicDelete)
+    /**
+     * 软删除（默认行为）：转调 service.remove，内部是 ${table.mapperName}.xml 里的显式 UPDATE，
+     * 只把删除标记置 1，行保留在库里、后续查询自动过滤掉；不发 DELETE，
+     * 也不用 removeById / updateById（updateById 会把逻辑删除列从 SET 子句里剔除，生成非法 SQL）。
+     * 确实需要物理删除时另外写 SQL 或自定义 mapper 方法，不要改这里。
+     */
+    @DeleteMapping("/{id}")
+    public ApiResponse<Boolean> remove(@PathVariable ${pkType} id) {
+        return ApiResponse.ok(${table.entityPath}Service.remove(id));
+    }
+#else
+    /**
+     * 物理删除：${table.name} 没有逻辑删除列（deleted），无法做软删除，
+     * 这里走 MyBatis-Plus 的 removeById 直接 DELETE 该行。
+     * 想改成软删除：先给表加 deleted 列（DDL 见 db/init.sql 的 sys_user），再重新生成代码。
+     */
+    @DeleteMapping("/{id}")
+    public ApiResponse<Boolean> remove(@PathVariable ${pkType} id) {
+        return ApiResponse.ok(${table.entityPath}Service.removeById(id));
+    }
+#end
+
+    /** 详情（查询逻辑在 service.detail 里，主键装进 QueryVO 走 list） */
+    @GetMapping("/{id}")
+    public ApiResponse<${entity}DTO> detail(@PathVariable ${pkType} id) {
+        return ApiResponse.ok(${table.entityPath}Service.detail(id));
+    }
+
+    /** 列表查询（条件组装、查询、实体转 DTO 都在 service 层） */
+    @GetMapping("/list")
+    public ApiResponse<List<${entity}DTO>> list(${entity}QueryVO query) {
+        return ApiResponse.ok(${table.entityPath}Service.list(query));
+    }
+
+    /** 分页查询（条件组装、查询、实体转 DTO 都在 service 层） */
+    @GetMapping("/page")
+    public ApiResponse<PageResult<${entity}DTO>> page(${entity}PageQueryVO query) {
+        return ApiResponse.ok(${table.entityPath}Service.page(query));
+    }
+}

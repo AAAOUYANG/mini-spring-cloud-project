@@ -1,0 +1,54 @@
+server:
+  # 端口可用环境变量覆盖（容器化 / 多实例时用）
+  port: ${SERVER_PORT:8081}
+
+spring:
+  application:
+    name: mini-user-service
+  cloud:
+    nacos:
+      # 注册中心与配置中心共用同一个地址
+      discovery:
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        # 留空 = 让 SCA 自动探测本机地址：混合模式下注册宿主 LAN IP（同机网关可直连），
+        # 容器内注册容器 IP。实测置空即走自动探测；只有自动探测选错网卡时才需要显式指定，
+        # 例如 NACOS_DISCOVERY_IP=127.0.0.1。
+        # 环境隔离：命名空间 id 即环境名。默认 dev —— 「不显式指定就永远读不到生产配置」，
+        # 生产必须由部署侧显式注入 NACOS_NAMESPACE=prod（见 docker/app/env/prod.env）
+        namespace: ${NACOS_NAMESPACE:dev}
+        ip: ${NACOS_DISCOVERY_IP:}
+      config:
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        file-extension: yaml
+        namespace: ${NACOS_NAMESPACE:dev}
+  config:
+    import:
+      # 配置集中在 Nacos，源文件见 docker/infra/nacos/config/*.yaml（随仓库管理，可一键重放）
+      # optional: 前缀让「配置中心里还没有这些配置」时不至于启动失败；生产环境建议去掉
+      - optional:nacos:mini-common.yaml
+      - optional:nacos:mini-user-service.yaml
+      # 环境层放最后：同名键以它为准（dev/prod 共用同一个 dataId，内容各在各自命名空间里）
+      - optional:nacos:mini-env.yaml
+
+# 以下属于「结构性配置」，刻意留在本地：它们和代码/资源文件绑定，
+# 不属于随环境变化的参数，放配置中心反而容易改出不一致
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.example.demo.domain.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: false
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # refresh 用于手动触发配置刷新（本次用来演示动态刷新），生产环境按需收敛
+        include: health,info,refresh

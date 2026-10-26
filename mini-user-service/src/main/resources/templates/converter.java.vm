@@ -1,0 +1,67 @@
+## MapStruct 转换器模板：接口形式，@Mapper(componentModel = "spring") 会生成 XxxConverterImpl 并注册为
+## Spring Bean；同时提供 INSTANCE = Mappers.getMapper(...)，非 Spring 场景可直接静态调用
+## （XxxConverter.INSTANCE.toDTO(entity)）。实体与 DTO 字段同名同类型（DTO 只少一个 deleted）。
+package ${package.Parent}.convert;
+
+import ${package.Entity}.${entity};
+import ${package.Parent}.domain.dto.${entity}DTO;
+import org.mapstruct.Mapper;
+#set($hasLogicDelete = false)
+#foreach($field in ${table.fields})
+#if(${field.propertyName} == "deleted")#set($hasLogicDelete = true)#end
+#end
+#if($hasLogicDelete)
+import org.mapstruct.Mapping;
+#end
+import org.mapstruct.factory.Mappers;
+
+import java.util.List;
+
+/**
+ * <p>
+ * $!{table.comment} 实体与 DTO 转换器
+ * </p>
+ *
+ * @author ${author}
+ * @since ${date}
+ */
+@Mapper(componentModel = "spring")
+public interface ${entity}Converter {
+
+    ${entity}Converter INSTANCE = Mappers.getMapper(${entity}Converter.class);
+
+    /**
+     * 实体 -> DTO
+     *
+     * @param entity 实体
+     * @return DTO
+     */
+    ${entity}DTO toDTO(${entity} entity);
+
+    /**
+     * 实体列表 -> DTO 列表
+     *
+     * @param entities 实体列表
+     * @return DTO 列表
+     */
+    List<${entity}DTO> toDTOList(List<${entity}> entities);
+
+    /**
+     * DTO -> 实体
+     *
+     * @param dto DTO
+     * @return 实体
+     */
+#if($hasLogicDelete)
+    @Mapping(target = "deleted", ignore = true)
+#end
+    ${entity} toEntity(${entity}DTO dto);
+
+    /**
+     * DTO 列表 -> 实体列表
+     *
+     * @param dtos DTO 列表
+     * @return 实体列表
+     */
+    List<${entity}> toEntityList(List<${entity}DTO> dtos);
+}

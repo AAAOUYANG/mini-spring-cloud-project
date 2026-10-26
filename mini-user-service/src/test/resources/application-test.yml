@@ -1,0 +1,29 @@
+spring:
+  # 单元测试只验证 controller -> service -> repository -> H2，不出网、不依赖任何外部组件。
+  cloud:
+    discovery:
+      enabled: false
+    nacos:
+      discovery:
+        enabled: false
+      config:
+        # 双重保证：既关掉配置客户端，又把地址指向必然连不上的端口。
+        # 这样万一哪天「测试不打配置中心」的前提被破坏，测试会立刻失败，
+        # 而不是悄悄连上本机正在运行的 Nacos 而让人误以为隔离是好的。
+        enabled: false
+        server-addr: 127.0.0.1:1
+        import-check:
+          enabled: false
+  datasource:
+    driver-class-name: org.h2.Driver
+    url: jdbc:h2:mem:mini_spring_boot;MODE=MySQL;DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/schema-h2.sql
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl

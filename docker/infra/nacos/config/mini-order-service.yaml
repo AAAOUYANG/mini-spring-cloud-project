@@ -1,0 +1,19 @@
+# ============================================================================
+# mini-order-service.yaml —— 订单服务的配置（Nacos 配置中心）
+# ============================================================================
+
+# OpenFeign 全局配置。
+# Feign 默认超时很长（连接 10 秒、读取 60 秒），本地联调时改短，
+# 免得被调服务没起来时要干等一分钟才看到失败。
+feign:
+  client:
+    config:
+      default:
+        connectTimeout: 3000
+        readTimeout: 5000
+        loggerLevel: basic
+
+logging:
+  level:
+    # 打开后可以看到 Feign 实际请求的地址与响应状态
+    com.example.order.client: debug

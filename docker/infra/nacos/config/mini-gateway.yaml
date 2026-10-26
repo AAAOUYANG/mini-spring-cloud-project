@@ -1,0 +1,20 @@
+# ============================================================================
+# mini-gateway.yaml —— 网关的配置（Nacos 配置中心）
+#
+# 注意：路由规则（spring.cloud.gateway.routes）刻意留在本模块的 application.yml 里，
+# 不放配置中心。理由：路由属于「结构性配置」，改了必须配合重建 RouteLocator；
+# 配置中心更适合放随环境变化的参数（超时、日志级别等）。
+# 若确实要动态改路由，需要额外调用 POST /actuator/gateway/refresh 才生效。
+# ============================================================================
+
+spring:
+  cloud:
+    gateway:
+      httpclient:
+        # 下游服务响应超时（毫秒）。默认不设超时，本地联调时设短一些便于暴露问题
+        connect-timeout: 3000
+        response-timeout: 10s
+
+logging:
+  level:
+    org.springframework.cloud.gateway: info

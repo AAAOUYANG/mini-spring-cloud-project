@@ -1,0 +1,25 @@
+# Jenkins 插件清单（构建镜像时安装，未锁版本以便跟随插件中心的最新兼容版）
+#
+# - configuration-as-code : 让 CASC_JENKINS_CONFIG 生效，Jenkins 配置代码化
+# - job-dsl               : 后续用 JCasC 播种任务
+# - workflow-aggregator   : Pipeline 全家桶
+# - git / git-client      : 从挂载的仓库目录读取代码
+# - docker-workflow       : pipeline 里用 docker agent（DooD）
+# - docker-plugin         : 配置 Docker Cloud
+# - pipeline-utility-steps: 常用的 readYaml / writeJSON 等
+# - credentials-binding   : 凭据注入
+# - build-timeout         : 任务超时保护
+# - ws-cleanup            : 清理工作区
+# - timestamper           : 日志带时间戳
+
+configuration-as-code
+job-dsl
+workflow-aggregator
+git
+docker-workflow
+docker-plugin
+pipeline-utility-steps
+credentials-binding
+build-timeout
+ws-cleanup
+timestamper

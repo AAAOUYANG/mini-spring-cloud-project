@@ -1,0 +1,28 @@
+# ============================================================================
+# prod 环境层（发布后 dataId = mini-env.yaml，位于 Nacos 命名空间 prod）
+#
+# 只放「开发环境与生产环境不同」的配置。它会在 spring.config.import 里**最后**导入，
+# 因此优先级高于 mini-common.yaml / mini-<服务名>.yaml：同名键以本文件为准。
+#
+# ⚠️ 这里给字面值而不是 ${DB_URL:...}：占位符会被环境变量抢先解析，导致「控制台里
+#    改了却看不到效果」。字面值保证「控制台里看到的就是实际生效的」。
+#    真要临时覆盖，用标准变量 SPRING_DATASOURCE_URL（它是环境变量，优先级高于配置中心）。
+# ============================================================================
+
+mini:
+  demo:
+    message: hello from Nacos config center [prod]
+
+spring:
+  datasource:
+    # 生产库与开发库分离（区别于 dev 的 mini_spring_boot）。
+    # 容器内拓扑用服务名 mysql；createDatabaseIfNotExist 只是本地测试环境的便利，
+    # 真实生产应预先建库并改成 sql.init.mode: never + Flyway/Liquibase 管理 DDL。
+    url: jdbc:mysql://mysql:3306/mini_spring_boot_prod?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true
+
+logging:
+  level:
+    # 生产降噪
+    root: warn
+    # 但自己业务包保留 info，否则出问题时日志里什么都没有
+    com.example: info

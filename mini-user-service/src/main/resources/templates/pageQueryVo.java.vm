@@ -1,0 +1,24 @@
+## 分页查询条件模板：继承 QueryVO，附加页码与每页条数；字段绑定 GET 查询参数。
+package ${package.Parent}.domain.query;
+
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+
+/**
+ * <p>
+ * $!{table.comment} 分页查询条件
+ * </p>
+ *
+ * @author ${author}
+ * @since ${date}
+ */
+@Data
+@EqualsAndHashCode(callSuper = true)
+public class ${entity}PageQueryVO extends ${entity}QueryVO {
+
+    /** 页码，从 1 开始 */
+    private long pageNum = 1L;
+
+    /** 每页条数 */
+    private long pageSize = 10L;
+}

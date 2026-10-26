@@ -1,0 +1,34 @@
+# ============================================================================
+# mini-user-service.yaml —— 用户服务的配置（Nacos 配置中心）
+# dataId 必须与 spring.config.import 中声明的一致：mini-user-service.yaml
+# ============================================================================
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    # 数据源 url **不在这里**：dev/prod 各连哪个库，由各自命名空间的环境层
+    # mini-env.yaml 给字面值决定（它在 spring.config.import 里最后导入，优先级最高）。
+    # 这样控制台里看到的就是实际生效的，不会被环境变量悄悄盖掉；
+    # 临时覆盖请用标准变量 SPRING_DATASOURCE_URL（环境变量，优先级高于配置中心）。
+    #
+    # 少了这一行，若某个命名空间没发布 mini-env.yaml，启动会直接报
+    # "Failed to configure a DataSource"——这是刻意的 fail-fast，
+    # 避免出现「以为连上了配置中心，其实在用别处的默认值」。
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      pool-name: MiniHikariPool
+  sql:
+    init:
+      # init.sql 是幂等的，每次启动都会执行；生产环境若用 Flyway/Liquibase 管理 DDL，可改成 never
+      mode: always
+      schema-locations: classpath:db/init.sql
+      encoding: UTF-8
+      continue-on-error: false
+
+logging:
+  level:
+    com.example.demo.repository: debug

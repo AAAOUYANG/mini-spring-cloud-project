@@ -1,0 +1,32 @@
+server:
+  port: ${SERVER_PORT:8082}
+
+spring:
+  application:
+    name: mini-order-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        # 环境隔离：命名空间 id 即环境名。默认 dev —— 「不显式指定就永远读不到生产配置」，
+        # 生产必须由部署侧显式注入 NACOS_NAMESPACE=prod（见 docker/app/env/prod.env）
+        namespace: ${NACOS_NAMESPACE:dev}
+        ip: ${NACOS_DISCOVERY_IP:}
+      config:
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        file-extension: yaml
+        namespace: ${NACOS_NAMESPACE:dev}
+  config:
+    import:
+      - optional:nacos:mini-common.yaml
+      - optional:nacos:mini-order-service.yaml
+      # 环境层放最后：同名键以它为准（dev/prod 共用同一个 dataId，内容各在各自命名空间里）
+      - optional:nacos:mini-env.yaml
+
+# Feign 超时、日志级别等参数已移到 Nacos 的 mini-order-service.yaml
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,refresh

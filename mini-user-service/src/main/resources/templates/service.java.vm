@@ -1,0 +1,65 @@
+package ${package.Service};
+
+import ${package.Entity}.${entity};
+import com.example.common.web.PageResult;
+import ${package.Parent}.domain.dto.${entity}DTO;
+import ${package.Parent}.domain.query.${entity}PageQueryVO;
+import ${package.Parent}.domain.query.${entity}QueryVO;
+import ${superServiceClassPackage};
+
+import java.util.List;
+#set($hasLogicDelete = false)
+#foreach($field in ${table.fields})
+#if(${field.keyFlag})
+#set($pkType = ${field.propertyType})
+#end
+#if(${field.propertyName} == "deleted")
+#set($hasLogicDelete = true)
+#end
+#end
+
+/**
+ * <p>
+ * $!{table.comment} 服务类
+ * </p>
+ *
+ * @author ${author}
+ * @since ${date}
+ */
+public interface ${table.serviceName} extends ${superServiceClass}<${entity}> {
+
+    /**
+     * 按主键查询详情（内部走 list，条件与 SQL 见 ${table.mapperName}.xml）
+     *
+     * @param id 主键
+     * @return DTO，查不到时返回 null
+     */
+    ${entity}DTO detail(${pkType} id);
+
+#if($hasLogicDelete)
+    /**
+     * 软删除：显式 UPDATE 把删除标记置 1，行保留在库里，后续查询自动过滤。
+     * 不走 MyBatis-Plus 的 removeById / deleteById，SQL 见 ${table.mapperName}.xml。
+     *
+     * @param id 主键
+     * @return 是否删除成功（记录不存在或已删除返回 false）
+     */
+    boolean remove(${pkType} id);
+#end
+
+    /**
+     * 条件查询列表
+     *
+     * @param queryVO 查询条件
+     * @return DTO 列表
+     */
+    List<${entity}DTO> list(${entity}QueryVO queryVO);
+
+    /**
+     * 条件分页查询
+     *
+     * @param queryVO 查询条件（PageQueryVO 继承 QueryVO，额外带 pageNum / pageSize）
+     * @return 分页结果，records 为 DTO
+     */
+    PageResult<${entity}DTO> page(${entity}PageQueryVO queryVO);
+}

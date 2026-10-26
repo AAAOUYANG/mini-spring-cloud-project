@@ -1,0 +1,31 @@
+# ============================================================================
+# dev 环境层（发布后 dataId = mini-env.yaml，位于 Nacos 命名空间 dev）
+#
+# 只放「开发环境与生产环境不同」的配置。它会在 spring.config.import 里**最后**导入，
+# 因此优先级高于 mini-common.yaml / mini-<服务名>.yaml：同名键以本文件为准。
+# 详见根目录 README「多环境隔离」一节。
+# ============================================================================
+
+# 环境标识：GET /config/demo 会直接返回它，用来一眼确认「这个实例读的是哪个环境」
+mini:
+  demo:
+    message: hello from Nacos config center [dev]
+
+spring:
+  datasource:
+    # dev 连哪个库，由**配置中心**决定（和 prod 同一套做法）。
+    # 这里给字面值、不写 ${DB_URL:...}：占位符会被环境变量抢先解析，
+    # 于是「控制台里改了却看不到效果」。字面值保证「看到的就是生效的」。
+    # 容器内拓扑用服务名 mysql；本机直跑要用 127.0.0.1:13306，见下面注释。
+    #
+    # 换库怎么改：改这一行 → 保存并发布 → **重启进程**。
+    #（数据源是启动期配置，Nacos 的自动刷新对它无效；且 docker compose up -d 在服务定义没变时
+    #  不会重启容器，只打印 "Container ... Running"，要用 docker compose restart mini-user-service。）
+    # 本机直跑（不经容器）时用标准变量覆盖，它是环境变量、优先级高于配置中心：
+    #   SPRING_DATASOURCE_URL='jdbc:mysql://127.0.0.1:13306/mini_spring_boot?...' mvn spring-boot:run
+    url: jdbc:mysql://mysql:3306/mini_spring_boot?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true
+
+logging:
+  level:
+    # 开发环境打开 info，方便看到启动与请求链路
+    root: info

@@ -1,0 +1,54 @@
+server:
+  # 避开 Jenkins 的 8080 与业务服务的 8081/8082
+  port: ${SERVER_PORT:9000}
+
+spring:
+  application:
+    name: mini-gateway
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        # 环境隔离：命名空间 id 即环境名。默认 dev —— 「不显式指定就永远读不到生产配置」，
+        # 生产必须由部署侧显式注入 NACOS_NAMESPACE=prod（见 docker/app/env/prod.env）
+        namespace: ${NACOS_NAMESPACE:dev}
+        ip: ${NACOS_DISCOVERY_IP:}
+      config:
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        file-extension: yaml
+        namespace: ${NACOS_NAMESPACE:dev}
+    gateway:
+      discovery:
+        locator:
+          # 不开放「按服务名自动路由」（否则 /mini-user-service/** 就能直接访问），
+          # 统一在下面显式声明，避免服务名被当成 URL 前缀暴露出去
+          enabled: false
+      # 路由属于结构性配置，留在本地；超时等参数在 Nacos 的 mini-gateway.yaml
+      routes:
+        - id: mini-user-service
+          uri: lb://mini-user-service
+          predicates:
+            - Path=/api/user/**
+          filters:
+            # /api/user/1 -> /user/1（去掉 1 层前缀，正好对齐 user-service 的 /user）
+            - StripPrefix=1
+
+        - id: mini-order-service
+          uri: lb://mini-order-service
+          predicates:
+            - Path=/api/order/**
+          filters:
+            # /api/order/1001 -> /order/1001
+            - StripPrefix=1
+  config:
+    import:
+      - optional:nacos:mini-common.yaml
+      - optional:nacos:mini-gateway.yaml
+      # 环境层放最后：同名键以它为准（dev/prod 共用同一个 dataId，内容各在各自命名空间里）
+      - optional:nacos:mini-env.yaml
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway,refresh

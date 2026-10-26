@@ -1,0 +1,24 @@
+# 构建输出
+target/
+
+# IDE 配置
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+
+# 系统文件 / 日志
+.DS_Store
+*.log
+logs/
+
+# 本地环境
+.env
+.m2/
+
+# 工具产物（playwright-cli 会话的快照/日志目录）
+.playwright-cli/

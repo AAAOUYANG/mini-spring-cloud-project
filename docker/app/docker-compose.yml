@@ -1,0 +1,119 @@
+name: mini-spring-app
+
+# ============================================================================
+# 应用层（容器化模式）：三个 Spring Boot 应用跑在容器里，
+# 与 docker/infra 的基础设施共用外部网络 mini-net（该网络由基础设施 compose 创建）。
+#
+# 用法（先基础设施、后应用）：
+#   cd docker/infra && docker compose up -d          # 起 MySQL/Nacos/Jenkins，并发布配置
+#   cd docker/app   && docker compose up -d --build  # 构建并启动三个应用
+#   cd docker/app   && docker compose down           # 只停应用，不影响基础设施
+#
+# 与「混合模式」的差异：
+#   混合模式  应用跑在宿主 IDE/JVM，连 127.0.0.1:8848 与 127.0.0.1:13306
+#   容器化    应用跑在容器里，连 nacos:8848 与 mysql:3306（compose 内置 DNS 解析服务名）
+#
+# ⚠️ 两种模式不要同时运行：注册的服务名相同，会变成「同一个服务名下两个实例」，
+#    网关会轮询到宿主与容器两边，排查问题时会非常困惑。
+#
+# 多环境：环境差异集中在 env/<环境>.env（Nacos 命名空间、数据源、镜像 tag），命令形如：
+#   APP_ENV=dev IMAGE_TAG=local docker compose -f docker/app/docker-compose.yml up -d
+#   - APP_ENV 决定用哪个 env 文件（env_file 的相对路径按本文件解析，不受当前目录影响）
+#   - APP_ENV / IMAGE_TAG 必须走 shell：compose 的变量替换读不到 env_file 的内容
+#   - 同一时刻只跑一套：切环境 = 用另一个 APP_ENV 重建容器，而不是并存两套
+#   - 漏传会直接报错（下面有 :? 守卫），不会悄悄用错环境
+# ============================================================================
+
+services:
+
+  # ---------------------------------------------------------------- 用户服务
+  mini-user-service:
+    build:
+      context: ../..
+      dockerfile: docker/app/Dockerfile
+      args:
+        MODULE: mini-user-service
+    image: mini-user-service:${IMAGE_TAG:?IMAGE_TAG 未设置：请显式传 IMAGE_TAG（如 IMAGE_TAG=local）}
+    container_name: mini-user-service
+    restart: unless-stopped
+    # 环境差异（NACOS_NAMESPACE 等）从这里注入。
+    # 刻意不在 environment / env_file 里设数据源地址：那样就无法表达「数据源由配置中心决定」，
+    # 因为空值也会被当成显式设置、覆盖成空字符串。env_file 只注入文件里真实存在的键。
+    env_file:
+      - ./env/${APP_ENV:?APP_ENV 未设置：请用 APP_ENV=dev 或 APP_ENV=prod}.env
+    environment:
+      # 容器里必须用服务名，写成 127.0.0.1 会连到容器自己
+      NACOS_ADDR: nacos:8848
+      DB_USERNAME: root
+      # 若在 docker/infra/.env 里改过密码，这里用同名环境变量覆盖即可
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      SERVER_PORT: "8081"
+      # 刻意不设 NACOS_DISCOVERY_IP：留空让 SCA 自动探测容器 IP 后注册，
+      # 网关（也在容器里）才能连上；设成 127.0.0.1 会注册成回环地址，网关必然连不上。
+      TZ: ${TZ:-Asia/Shanghai}
+      JAVA_OPTS: ${JAVA_OPTS:--Xmx384m}
+    ports:
+      # 只映射到宿主 18081：避免与混合模式的 8081 抢端口，方便排查时直连
+      - "127.0.0.1:18081:8081"
+    networks:
+      - mini-net
+
+  # ---------------------------------------------------------------- 订单服务
+  mini-order-service:
+    build:
+      context: ../..
+      dockerfile: docker/app/Dockerfile
+      args:
+        MODULE: mini-order-service
+    image: mini-order-service:${IMAGE_TAG:?IMAGE_TAG 未设置：请显式传 IMAGE_TAG（如 IMAGE_TAG=local）}
+    container_name: mini-order-service
+    restart: unless-stopped
+    env_file:
+      - ./env/${APP_ENV:?APP_ENV 未设置：请用 APP_ENV=dev 或 APP_ENV=prod}.env
+    environment:
+      NACOS_ADDR: nacos:8848
+      SERVER_PORT: "8082"
+      TZ: ${TZ:-Asia/Shanghai}
+      JAVA_OPTS: ${JAVA_OPTS:--Xmx384m}
+    ports:
+      - "127.0.0.1:18082:8082"
+    depends_on:
+      mini-user-service:
+        # 它要通过 OpenFeign 调用户服务，等对方健康再起，启动日志干净些
+        condition: service_healthy
+    networks:
+      - mini-net
+
+  # ---------------------------------------------------------------- 网关
+  mini-gateway:
+    build:
+      context: ../..
+      dockerfile: docker/app/Dockerfile
+      args:
+        MODULE: mini-gateway
+    image: mini-gateway:${IMAGE_TAG:?IMAGE_TAG 未设置：请显式传 IMAGE_TAG（如 IMAGE_TAG=local）}
+    container_name: mini-gateway
+    restart: unless-stopped
+    env_file:
+      - ./env/${APP_ENV:?APP_ENV 未设置：请用 APP_ENV=dev 或 APP_ENV=prod}.env
+    environment:
+      NACOS_ADDR: nacos:8848
+      SERVER_PORT: "9000"
+      TZ: ${TZ:-Asia/Shanghai}
+      JAVA_OPTS: ${JAVA_OPTS:--Xmx256m}
+    ports:
+      # 网关是唯一入口，宿主端口与混合模式保持一致（两种模式二选一）
+      - "127.0.0.1:9000:9000"
+    depends_on:
+      mini-user-service:
+        condition: service_healthy
+      mini-order-service:
+        condition: service_healthy
+    networks:
+      - mini-net
+
+networks:
+  # 由 docker/infra/docker-compose.yml 创建，这里只引用，不负责创建
+  mini-net:
+    external: true
+    name: mini-net

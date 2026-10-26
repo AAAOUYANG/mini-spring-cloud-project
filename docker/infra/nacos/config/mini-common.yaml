@@ -1,0 +1,31 @@
+# ============================================================================
+# mini-common.yaml —— 所有服务共用的配置（Nacos 配置中心）
+#
+# 发布方式：docker/infra/nacos/publish-config.sh（或 docker compose up -d 时由
+#           nacos-config-init 一次性容器自动发布）
+#
+# 分层原则（详见根目录 README「配置分层」一节）：
+#   本地 application.yml  只放「让进程起来并连上 Nacos」的最小集合 + 结构性配置
+#                          （端口、应用名、Nacos 地址、mapper 位置、网关路由）
+#   Nacos 配置中心        环境相关的业务参数（数据源、Feign 超时、Jackson、日志级别）
+#   环境变量              最高优先级，用于容器/CI 等部署差异（NACOS_ADDR、SERVER_PORT 等）。
+#                          数据源地址刻意**不**走这里：dev/prod 都由环境层 mini-env.yaml 决定，
+#                          要临时覆盖才用 SPRING_DATASOURCE_URL
+# ============================================================================
+
+spring:
+  jackson:
+    # 序列化时间时使用的时区（与数据库连接串的 serverTimezone 保持一致）
+    time-zone: Asia/Shanghai
+    # 值为 null 的字段整个键都不输出。注意它只影响响应体，不影响入库
+    default-property-inclusion: non_null
+
+logging:
+  level:
+    root: info
+
+# 配置中心演示项：改动它并刷新后，GET /config/demo 会立刻返回新值，无需重启。
+# 见 mini-user-service 的 ConfigDemoController（@RefreshScope）。
+mini:
+  demo:
+    message: hello from Nacos config center

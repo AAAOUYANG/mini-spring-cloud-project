@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.example</groupId>
+        <artifactId>mini-spring-cloud</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <groupId>com.example</groupId>
+    <artifactId>mini-user-service</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <name>mini-user-service</name>
+    <description>用户服务：分层 Spring Boot + MyBatis-Plus，注册到 Nacos</description>
+
+    <properties>
+        <mybatis-plus.version>3.5.7</mybatis-plus.version>
+        <mapstruct.version>1.5.5.Final</mapstruct.version>
+        <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
+        <velocity.version>2.3</velocity.version>
+        <exec-maven-plugin.version>3.1.0</exec-maven-plugin.version>
+    </properties>
+
+    <dependencies>
+        <!-- 跨服务共享的响应模型（ApiResponse / PageResult） -->
+        <dependency>
+            <groupId>com.example</groupId>
+            <artifactId>mini-common</artifactId>
+        </dependency>
+
+        <!-- 注册到 Nacos，供网关与本服务的调用方按服务名寻址 -->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+        </dependency>
+
+        <!--
+          配置中心：走 spring.config.import 方式接入，不需要 spring-cloud-starter-bootstrap。
+          引了 nacos-config 却不写 spring.config.import 时，SCA 的 import-check 会直接让启动失败
+          （这是刻意设计的，避免「以为接了配置中心其实没接」）。
+        -->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+
+        <!-- 暴露 /actuator/health，便于确认服务与注册状态 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- MyBatis-Plus starter 已经包含 MyBatis / mybatis-spring，无需重复引入 -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-boot-starter</artifactId>
+            <version>${mybatis-plus.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!--
+          对象转换。每个 @Mapper 接口（手写的 UserVoConverter，或由
+          "mvnw -Pcodegen process-classes" 生成的 XxxConverter）都在编译期由
+          mapstruct-processor 实现（生成 XxxConverterImpl），处理器配置在下面的
+          maven-compiler-plugin 里。
+        -->
+        <dependency>
+            <groupId>org.mapstruct</groupId>
+            <artifactId>mapstruct</artifactId>
+            <version>${mapstruct.version}</version>
+        </dependency>
+
+        <!--
+          代码生成器 com.example.demo.generator.CodeGenerator 使用。
+          这里用 compile scope 而不是 provided：provided 不在 IDE 运行 main 方法时的
+          classpath 上，直接运行会报 NoClassDefFoundError；可执行 jar 由下面
+          spring-boot-maven-plugin 的 <excludes> 排除，不受影响。
+          生成动作按需触发，普通构建（mvnw clean package / test）不会连接数据库。
+        -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-generator</artifactId>
+            <version>${mybatis-plus.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.velocity</groupId>
+            <artifactId>velocity-engine-core</artifactId>
+            <version>${velocity.version}</version>
+        </dependency>
+
+        <!-- 只用 BCrypt，不会启用 Spring Security 的过滤器链 -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-crypto</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <!--
+                      一旦声明 annotationProcessorPaths，就不再从 classpath 自动发现注解处理器，
+                      所以三个都必须列出。顺序很重要：Lombok 必须先于 MapStruct 执行，
+                      lombok-mapstruct-binding 让 MapStruct 能看到 Lombok 即将生成的访问器。
+                    -->
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok-mapstruct-binding</artifactId>
+                            <version>${lombok-mapstruct-binding.version}</version>
+                        </path>
+                        <path>
+                            <groupId>org.mapstruct</groupId>
+                            <artifactId>mapstruct-processor</artifactId>
+                            <version>${mapstruct.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                        <!--
+                          repackage 会把 provided 依赖也打进 jar，所以这里显式排除只用于
+                          生成代码的 generator 及其 Velocity 引擎。
+                        -->
+                        <exclude>
+                            <groupId>com.baomidou</groupId>
+                            <artifactId>mybatis-plus-generator</artifactId>
+                        </exclude>
+                        <exclude>
+                            <groupId>org.apache.velocity</groupId>
+                            <artifactId>velocity-engine-core</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+
+            <!--
+              按需代码生成（MyBatis-Plus Generator，项目内入口）。
+              这里只声明插件、不绑定 execution，所以普通构建不会运行；
+              下面的 "codegen" profile 把它绑到 process-classes。
+
+                  命令行（在仓库根目录）：./mvnw -pl mini-user-service -Pcodegen process-classes
+
+              可覆盖的参数（都可选）：
+                  -Dgen.tables=sys_user,sys_role   -Dgen.tablePrefix=sys_
+                  -Dgen.outputDir=src/main/java    -Dgen.basePackage=com.example.demo
+                  -Dgen.author=me                  -Dgen.fileOverride=true
+                  -Ddb.url=... -Ddb.username=... -Ddb.password=...
+              模板位于 src/main/resources/templates/*.vm。
+            -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>${exec-maven-plugin.version}</version>
+                <configuration>
+                    <mainClass>com.example.demo.generator.CodeGenerator</mainClass>
+                    <!-- runtime scope 已经包含 target/classes、compile 依赖（生成器）和 runtime 依赖（MySQL 驱动） -->
+                    <classpathScope>runtime</classpathScope>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <id>codegen</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>generate-code</id>
+                                <phase>process-classes</phase>
+                                <goals>
+                                    <goal>java</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

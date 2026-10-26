@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.example</groupId>
+        <artifactId>mini-spring-cloud</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>mini-common</artifactId>
+    <name>mini-common</name>
+    <description>跨服务共享的模型（统一响应包装、分页结果）</description>
+
+    <dependencies>
+        <!--
+          共享模块只放「服务之间真正需要一致」的东西：响应包装与分页结构。
+          业务 DTO / 实体不放到这里：各服务应各自持有模型，靠 JSON 契约交互，
+          否则一个小改动会牵动所有服务一起升级。
+
+          jackson-annotations 用于给 ApiResponse 标注构造器：
+          服务间用 OpenFeign 调用时，消费端要把响应体反序列化回来，
+          而 ApiResponse 的字段是 final 且构造器是私有的，不标注就只能依赖
+          -parameters 编译参数 + 参数名匹配，太隐晦，显式标注更可靠。
+        -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+</project>
