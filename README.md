@@ -1,4 +1,4 @@
-# mini-spring-cloud
+# mini-spring-cloud-project
 
 一个可以照着跑起来的 **Spring Cloud 微服务骨架**：`Gateway` 统一入口、`Nacos` 做注册中心与配置中心、业务服务之间用 `OpenFeign` 互调、`MySQL` 存业务数据、`Jenkins` 做本地 CI。基础设施与应用都能用 Docker 一键起，也支持「基础设施在容器、应用在 IDE」的混合模式。
 
